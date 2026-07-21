@@ -1,0 +1,4 @@
+-- GENERATED ZONE: write SQLite DDL for the spec's entities here.
+-- One table per entity. id TEXT PRIMARY KEY on every table.
+-- TEXT for string/text/enum/date/datetime, INTEGER for int/bool, REAL for float.
+-- Enum fields get a CHECK constraint listing the spec's enum_values.

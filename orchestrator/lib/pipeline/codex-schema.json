@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["done", "needs_clarification"] },
+    "question": { "type": ["string", "null"] }
+  },
+  "required": ["status", "question"],
+  "additionalProperties": false
+}
