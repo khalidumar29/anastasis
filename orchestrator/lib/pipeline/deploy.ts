@@ -252,6 +252,36 @@ async function deployApp(
   return `https://${host}`;
 }
 
+const READY_POLL_INTERVAL_MS = 3000;
+const READY_TIMEOUT_MS = 3 * 60 * 1000;
+
+/**
+ * Waits for the tenant Deployment's pod to actually be Ready before handing
+ * the URL back to the user. Without this, "Deployed" fired the moment the
+ * Deployment object was created — the pod still had to pull the image and
+ * boot Next.js, so the link the user got handed reliably 503'd for the
+ * first minute or two (confirmed against a real run). Bounded at 3 minutes;
+ * if it's not ready by then we still hand back the URL rather than fail the
+ * whole run over a slow image pull — the app is very likely to catch up
+ * moments later, and refusing to deploy would be worse than a late 503.
+ */
+async function waitForReady(
+  appsApi: k8s.AppsV1Api,
+  namespace: string,
+  emit: ProgressEmitter
+): Promise<void> {
+  emit("build", "Waiting for the app to finish starting...");
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const { readyReplicas } = (
+      await appsApi.readNamespacedDeployment({ name: "app", namespace })
+    ).status ?? {};
+    if ((readyReplicas ?? 0) >= 1) return;
+    await new Promise((resolve) => setTimeout(resolve, READY_POLL_INTERVAL_MS));
+  }
+  emit("build", "Still starting up — this can take a bit longer on a cold image pull.");
+}
+
 /**
  * Builds the generated app into a container image and deploys it to its own
  * tenant namespace, returning its public URL. Replaces serve.ts entirely —
@@ -271,6 +301,7 @@ export async function buildAndDeploy(
   const contextDir = stageBuildContext(appDir, runId);
   const imageTag = await buildImage(batchApi, runId, contextDir, emit);
   const url = await deployApp(coreApi, appsApi, networkingApi, runId, imageTag, emit);
+  await waitForReady(appsApi, `tenant-${slugify(runId)}`, emit);
 
   emit("done", `Deployed. Your app is live at ${url}.`);
   return url;
